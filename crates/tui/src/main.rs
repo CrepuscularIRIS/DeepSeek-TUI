@@ -3668,16 +3668,25 @@ fn should_use_mouse_capture_with(
 
 /// Whether to enable terminal mouse capture by default for this platform/host.
 ///
-/// Returns `false` on Windows (legacy console mouse-mode reporting is flaky;
-/// `--mouse-capture` opts in) and on JetBrains' JediTerm, which advertises
+/// On Windows, enabled only for **Windows Terminal** (detected via the
+/// `WT_SESSION` environment variable it always sets), which reliably supports
+/// VT mouse events — this routes scroll-wheel events to the conversation view
+/// instead of the input history (#1298). Legacy conhost.exe mouse-mode
+/// reporting is flaky, so all other Windows hosts keep capture off by default
+/// (`--mouse-capture` opts in).
+///
+/// On non-Windows, disabled only for JetBrains' JediTerm, which advertises
 /// mouse support but delivers SGR mouse-event escape sequences as raw text
-/// in the input stream — visible to users as garbled characters in the
-/// composer when they move the mouse over the TUI (#878, #898). The user
-/// can still opt back in with `[tui] mouse_capture = true` in
-/// `~/.deepseek/config.toml` or `--mouse-capture`.
+/// in the input stream — visible as garbled characters in the composer
+/// (#878, #898).
+///
+/// The user can always override with `[tui] mouse_capture = true/false` in
+/// `~/.deepseek/config.toml` or `--mouse-capture` / `--no-mouse-capture`.
 fn default_mouse_capture_enabled(terminal_emulator: Option<&str>) -> bool {
     if cfg!(windows) {
-        return false;
+        // Windows Terminal sets WT_SESSION and reliably supports VT mouse
+        // events; enable capture there. Legacy conhost.exe does not.
+        return std::env::var_os("WT_SESSION").is_some();
     }
     if matches!(terminal_emulator, Some(t) if t.eq_ignore_ascii_case("JetBrains-JediTerm")) {
         return false;
@@ -4644,13 +4653,46 @@ mod terminal_mode_tests {
         assert!(should_use_mouse_capture_with(&cli, &config, true, None));
     }
 
+    /// Serialise all tests that mutate `WT_SESSION` to prevent data races
+    /// when the test harness runs tests in parallel threads.
+    #[cfg(windows)]
+    fn wt_session_lock() -> std::sync::MutexGuard<'static, ()> {
+        use std::sync::{Mutex, OnceLock};
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
+
     #[test]
     #[cfg(windows)]
-    fn mouse_capture_defaults_off_on_windows_when_alternate_screen_is_active() {
+    fn mouse_capture_defaults_off_on_legacy_windows_console() {
+        let _lock = wt_session_lock();
         let cli = parse_cli(&["deepseek"]);
         let config = Config::default();
+        // Simulate legacy conhost.exe: WT_SESSION absent.
+        let prev = std::env::var_os("WT_SESSION");
+        unsafe { std::env::remove_var("WT_SESSION") };
+        let result = should_use_mouse_capture_with(&cli, &config, true, None);
+        if let Some(v) = prev {
+            unsafe { std::env::set_var("WT_SESSION", v) };
+        }
+        assert!(!result);
+    }
 
-        assert!(!should_use_mouse_capture_with(&cli, &config, true, None));
+    #[test]
+    #[cfg(windows)]
+    fn mouse_capture_defaults_on_in_windows_terminal() {
+        let _lock = wt_session_lock();
+        let cli = parse_cli(&["deepseek"]);
+        let config = Config::default();
+        // Simulate Windows Terminal: WT_SESSION is present.
+        let prev = std::env::var_os("WT_SESSION");
+        unsafe { std::env::set_var("WT_SESSION", "test-wt-session") };
+        let result = should_use_mouse_capture_with(&cli, &config, true, None);
+        match prev {
+            Some(v) => unsafe { std::env::set_var("WT_SESSION", v) },
+            None => unsafe { std::env::remove_var("WT_SESSION") },
+        }
+        assert!(result);
     }
 
     #[test]
