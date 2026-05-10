@@ -85,28 +85,105 @@ pub struct Session {
 }
 
 /// Cumulative usage statistics for a session.
+///
+/// Cache fields are `Option<u64>`: `None` means the API never reported cache
+/// data for this session (unknown), `Some(0)` means the API explicitly
+/// reported zero cached tokens.
 #[derive(Debug, Clone, Default)]
 #[allow(clippy::struct_field_names)]
 pub struct SessionUsage {
     pub input_tokens: u64,
     pub output_tokens: u64,
     #[allow(dead_code)]
-    pub cache_creation_input_tokens: u64,
+    pub cache_creation_input_tokens: Option<u64>,
     #[allow(dead_code)]
-    pub cache_read_input_tokens: u64,
+    pub cache_read_input_tokens: Option<u64>,
 }
 
 impl SessionUsage {
-    /// Add usage from a turn
+    /// Add usage from a turn.
+    ///
+    /// Cache fields are promoted from `None` to `Some` on the first turn that
+    /// reports them; subsequent turns accumulate into the existing `Some`.
+    /// Turns that omit cache data leave the fields unchanged so callers can
+    /// still distinguish "never reported" from "reported zero".
     pub fn add(&mut self, usage: &Usage) {
         self.input_tokens += u64::from(usage.input_tokens);
         self.output_tokens += u64::from(usage.output_tokens);
         if let Some(tokens) = usage.prompt_cache_miss_tokens {
-            self.cache_creation_input_tokens += u64::from(tokens);
+            *self.cache_creation_input_tokens.get_or_insert(0) += u64::from(tokens);
         }
         if let Some(tokens) = usage.prompt_cache_hit_tokens {
-            self.cache_read_input_tokens += u64::from(tokens);
+            *self.cache_read_input_tokens.get_or_insert(0) += u64::from(tokens);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::Usage;
+
+    fn usage(input: u32, output: u32, cache_hit: Option<u32>, cache_miss: Option<u32>) -> Usage {
+        Usage {
+            input_tokens: input,
+            output_tokens: output,
+            prompt_cache_hit_tokens: cache_hit,
+            prompt_cache_miss_tokens: cache_miss,
+            reasoning_tokens: None,
+            reasoning_replay_tokens: None,
+            server_tool_use: None,
+        }
+    }
+
+    #[test]
+    fn default_cache_fields_are_none() {
+        let su = SessionUsage::default();
+        assert!(su.cache_creation_input_tokens.is_none());
+        assert!(su.cache_read_input_tokens.is_none());
+    }
+
+    #[test]
+    fn add_without_cache_data_leaves_none() {
+        let mut su = SessionUsage::default();
+        su.add(&usage(10, 5, None, None));
+        assert_eq!(su.input_tokens, 10);
+        assert_eq!(su.output_tokens, 5);
+        assert!(su.cache_creation_input_tokens.is_none());
+        assert!(su.cache_read_input_tokens.is_none());
+    }
+
+    #[test]
+    fn add_with_cache_data_sets_some() {
+        let mut su = SessionUsage::default();
+        su.add(&usage(10, 5, Some(30), Some(70)));
+        assert_eq!(su.cache_read_input_tokens, Some(30));
+        assert_eq!(su.cache_creation_input_tokens, Some(70));
+    }
+
+    #[test]
+    fn accumulates_across_turns_with_cache_data() {
+        let mut su = SessionUsage::default();
+        su.add(&usage(10, 5, Some(30), Some(70)));
+        su.add(&usage(20, 8, Some(10), Some(20)));
+        assert_eq!(su.cache_read_input_tokens, Some(40));
+        assert_eq!(su.cache_creation_input_tokens, Some(90));
+        assert_eq!(su.input_tokens, 30);
+        assert_eq!(su.output_tokens, 13);
+    }
+
+    #[test]
+    fn mixed_turns_preserve_none_until_first_report() {
+        let mut su = SessionUsage::default();
+        // First two turns omit cache data
+        su.add(&usage(10, 5, None, None));
+        su.add(&usage(10, 5, None, None));
+        assert!(su.cache_read_input_tokens.is_none());
+        assert!(su.cache_creation_input_tokens.is_none());
+        // Third turn reports cache data
+        su.add(&usage(10, 5, Some(50), Some(0)));
+        assert_eq!(su.cache_read_input_tokens, Some(50));
+        assert_eq!(su.cache_creation_input_tokens, Some(0));
     }
 }
 
