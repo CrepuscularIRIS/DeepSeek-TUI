@@ -725,6 +725,9 @@ pub struct App {
     pub composer_arrows_scroll: bool,
     pub use_bracketed_paste: bool,
     pub use_paste_burst_detection: bool,
+    /// When true, Ctrl+Enter inserts a newline instead of force-steering.
+    /// Loaded from `settings.ctrl_enter_newline`.
+    pub ctrl_enter_newline: bool,
     /// Set to `true` the first time a real `Event::Paste` arrives during a
     /// session. Once set, `handle_paste_burst_key` short-circuits — there's
     /// no point running the rapid-keypress heuristic on a terminal that
@@ -1175,6 +1178,7 @@ impl App {
         let sidebar_focus = SidebarFocus::from_setting(&settings.sidebar_focus);
         let max_input_history = settings.max_input_history;
         let use_paste_burst_detection = settings.paste_burst_detection;
+        let ctrl_enter_newline = settings.ctrl_enter_newline;
         let mut ui_theme = palette::UiTheme::detect();
         if let Some(background) = settings
             .background_color
@@ -1344,6 +1348,7 @@ impl App {
             use_mouse_capture,
             use_bracketed_paste,
             use_paste_burst_detection,
+            ctrl_enter_newline,
             bracketed_paste_seen: false,
             system_prompt: None,
             auto_compact,

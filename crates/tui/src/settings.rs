@@ -211,6 +211,11 @@ pub struct Settings {
     pub cost_currency: String,
     /// Maximum number of input history entries to save
     pub max_input_history: usize,
+    /// Remap Ctrl+Enter to insert a newline instead of force-steering the
+    /// current turn. Useful on Windows terminals (e.g. nushell, PowerShell)
+    /// where Alt+Enter is captured by the terminal itself for full-screen
+    /// toggle. Default false; Ctrl+J or Shift+Enter work on all platforms.
+    pub ctrl_enter_newline: bool,
     /// Default provider override (e.g. "deepseek", "openai").
     pub default_provider: Option<String>,
     /// Default model to use
@@ -252,6 +257,7 @@ impl Default for Settings {
             context_panel: false,
             cost_currency: "usd".to_string(),
             max_input_history: 100,
+            ctrl_enter_newline: false,
             default_provider: None,
             default_model: None,
             provider_models: None,
@@ -462,6 +468,9 @@ impl Settings {
                 })?;
                 self.max_input_history = max;
             }
+            "ctrl_enter_newline" | "ctrl_enter" => {
+                self.ctrl_enter_newline = parse_bool(value)?;
+            }
             "default_model" | "model" => {
                 let trimmed = value.trim();
                 if trimmed.is_empty()
@@ -522,6 +531,7 @@ impl Settings {
         lines.push(format!("  sidebar_focus:      {}", self.sidebar_focus));
         lines.push(format!("  cost_currency:      {}", self.cost_currency));
         lines.push(format!("  max_history:        {}", self.max_input_history));
+        lines.push(format!("  ctrl_enter_newline: {}", self.ctrl_enter_newline));
         lines.push(format!(
             "  default_model:      {}",
             self.default_model.as_deref().unwrap_or("(default)")
@@ -587,6 +597,10 @@ impl Settings {
             ),
             ("cost_currency", "Cost display currency: usd, cny"),
             ("max_history", "Max input history entries"),
+            (
+                "ctrl_enter_newline",
+                "Remap Ctrl+Enter to insert a newline instead of force-steering: on/off",
+            ),
             (
                 "default_model",
                 "Default model: auto or any DeepSeek model ID (e.g. deepseek-v4-pro)",

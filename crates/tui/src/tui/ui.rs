@@ -2556,7 +2556,7 @@ async fn run_event_loop(
                     continue;
                 }
                 // Input handling
-                _ if is_composer_newline_key(key) => {
+                _ if is_composer_newline_key(key, app.ctrl_enter_newline) => {
                     app.insert_char('\n');
                 }
                 KeyCode::Enter
@@ -3650,13 +3650,14 @@ fn is_word_cursor_modifier(modifiers: KeyModifiers) -> bool {
     modifiers.contains(KeyModifiers::CONTROL) || modifiers.contains(KeyModifiers::ALT)
 }
 
-fn is_composer_newline_key(key: KeyEvent) -> bool {
+fn is_composer_newline_key(key: KeyEvent, ctrl_enter_newline: bool) -> bool {
     match key.code {
         KeyCode::Char('j') => key.modifiers.contains(KeyModifiers::CONTROL),
         KeyCode::Enter => {
             key.modifiers.contains(KeyModifiers::ALT)
                 || (key.modifiers.contains(KeyModifiers::SHIFT)
                     && !key.modifiers.contains(KeyModifiers::CONTROL))
+                || (ctrl_enter_newline && key.modifiers.contains(KeyModifiers::CONTROL))
         }
         _ => false,
     }

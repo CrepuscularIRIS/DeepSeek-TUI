@@ -118,30 +118,31 @@ fn terminal_origin_reset_resets_scroll_region_origin_without_destructive_clear()
 
 #[test]
 fn composer_newline_shortcuts_do_not_steal_ctrl_enter() {
-    assert!(is_composer_newline_key(KeyEvent::new(
-        KeyCode::Char('j'),
-        KeyModifiers::CONTROL,
-    )));
-    assert!(is_composer_newline_key(KeyEvent::new(
-        KeyCode::Enter,
-        KeyModifiers::ALT,
-    )));
-    assert!(is_composer_newline_key(KeyEvent::new(
-        KeyCode::Enter,
-        KeyModifiers::SHIFT,
-    )));
-    assert!(!is_composer_newline_key(KeyEvent::new(
-        KeyCode::Enter,
-        KeyModifiers::NONE,
-    )));
-    assert!(!is_composer_newline_key(KeyEvent::new(
-        KeyCode::Enter,
-        KeyModifiers::CONTROL,
-    )));
-    assert!(!is_composer_newline_key(KeyEvent::new(
-        KeyCode::Enter,
-        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
-    )));
+    assert!(is_composer_newline_key(
+        KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL),
+        false,
+    ));
+    assert!(is_composer_newline_key(
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT),
+        false,
+    ));
+    assert!(is_composer_newline_key(
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT),
+        false,
+    ));
+    assert!(!is_composer_newline_key(
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+        false,
+    ));
+    // Ctrl+Enter does not insert a newline when the setting is off.
+    assert!(!is_composer_newline_key(
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL),
+        false,
+    ));
+    assert!(!is_composer_newline_key(
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL | KeyModifiers::SHIFT),
+        false,
+    ));
 }
 
 #[test]
@@ -4705,4 +4706,32 @@ fn subagent_completion_notification_can_include_elapsed_summary() {
 
     assert!(msg.contains("deepseek: sub-agent agent_live complete"));
     assert!(msg.contains("deepseek: sub-agent complete (1m 5s)"));
+}
+
+#[test]
+fn ctrl_j_is_always_a_newline_key() {
+    let ctrl_j = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL);
+    assert!(super::is_composer_newline_key(ctrl_j, false));
+    assert!(super::is_composer_newline_key(ctrl_j, true));
+}
+
+#[test]
+fn shift_enter_is_always_a_newline_key() {
+    let shift_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT);
+    assert!(super::is_composer_newline_key(shift_enter, false));
+    assert!(super::is_composer_newline_key(shift_enter, true));
+}
+
+#[test]
+fn ctrl_enter_is_newline_only_when_setting_is_on() {
+    let ctrl_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL);
+    assert!(!super::is_composer_newline_key(ctrl_enter, false));
+    assert!(super::is_composer_newline_key(ctrl_enter, true));
+}
+
+#[test]
+fn plain_enter_is_never_a_newline_key() {
+    let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    assert!(!super::is_composer_newline_key(enter, false));
+    assert!(!super::is_composer_newline_key(enter, true));
 }
