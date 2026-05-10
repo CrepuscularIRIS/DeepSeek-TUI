@@ -4735,3 +4735,13 @@ fn plain_enter_is_never_a_newline_key() {
     assert!(!super::is_composer_newline_key(enter, false));
     assert!(!super::is_composer_newline_key(enter, true));
 }
+
+#[test]
+fn ctrl_shift_enter_is_never_a_newline_key() {
+    // Ctrl+Shift+Enter must not become a newline regardless of the setting;
+    // the ctrl_enter_newline branch mirrors the !SHIFT guard on Shift+Enter.
+    let ctrl_shift_enter =
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL | KeyModifiers::SHIFT);
+    assert!(!super::is_composer_newline_key(ctrl_shift_enter, false));
+    assert!(!super::is_composer_newline_key(ctrl_shift_enter, true));
+}

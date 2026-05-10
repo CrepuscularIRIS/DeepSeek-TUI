@@ -213,8 +213,10 @@ pub struct Settings {
     pub max_input_history: usize,
     /// Remap Ctrl+Enter to insert a newline instead of force-steering the
     /// current turn. Useful on Windows terminals (e.g. nushell, PowerShell)
-    /// where Alt+Enter is captured by the terminal itself for full-screen
-    /// toggle. Default false; Ctrl+J or Shift+Enter work on all platforms.
+    /// where Alt+Enter is captured by the terminal itself for a full-screen
+    /// toggle. Default false; Ctrl+J and Shift+Enter work on all platforms.
+    /// Note: enabling this disables the Ctrl+Enter force-steer shortcut;
+    /// force-steer remains available via the `/steer` slash command.
     pub ctrl_enter_newline: bool,
     /// Default provider override (e.g. "deepseek", "openai").
     pub default_provider: Option<String>,

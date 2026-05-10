@@ -3657,7 +3657,9 @@ fn is_composer_newline_key(key: KeyEvent, ctrl_enter_newline: bool) -> bool {
             key.modifiers.contains(KeyModifiers::ALT)
                 || (key.modifiers.contains(KeyModifiers::SHIFT)
                     && !key.modifiers.contains(KeyModifiers::CONTROL))
-                || (ctrl_enter_newline && key.modifiers.contains(KeyModifiers::CONTROL))
+                || (ctrl_enter_newline
+                    && key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::SHIFT))
         }
         _ => false,
     }
