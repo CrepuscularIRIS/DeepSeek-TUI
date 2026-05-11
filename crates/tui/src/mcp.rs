@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use reqwest::StatusCode;
-use reqwest::header::{ACCEPT, CONTENT_TYPE};
+use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::process::{Child, ChildStdin, ChildStdout};
@@ -153,6 +153,11 @@ pub struct McpServerConfig {
     #[serde(default)]
     pub env: HashMap<String, String>,
     pub url: Option<String>,
+    /// Extra HTTP headers sent with every request to an HTTP/SSE MCP server.
+    /// Ignored for stdio servers. Supports auth schemes such as
+    /// `Authorization: Bearer <token>` and `X-API-Key: <key>`.
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
     #[serde(default)]
     pub connect_timeout: Option<u64>,
     #[serde(default)]
@@ -934,8 +939,17 @@ impl McpConnection {
                     }
                 }
             }
+            let mut default_headers = HeaderMap::new();
+            for (name, value) in &config.headers {
+                let header_name = HeaderName::from_bytes(name.as_bytes())
+                    .with_context(|| format!("invalid MCP header name: {name}"))?;
+                let header_value = HeaderValue::from_str(value)
+                    .with_context(|| format!("invalid MCP header value for {name}"))?;
+                default_headers.insert(header_name, header_value);
+            }
             let client = reqwest::Client::builder()
                 .timeout(Duration::from_secs(connect_timeout_secs))
+                .default_headers(default_headers)
                 .build()?;
             Box::new(HttpTransport::new(
                 client,
@@ -2141,6 +2155,7 @@ fn mcp_template_json() -> Result<String> {
             args: vec!["./path/to/your-mcp-server.js".to_string()],
             env: HashMap::new(),
             url: None,
+            headers: HashMap::new(),
             connect_timeout: None,
             execute_timeout: None,
             read_timeout: None,
@@ -2192,6 +2207,7 @@ pub fn add_server_config(
             args,
             env: HashMap::new(),
             url,
+            headers: HashMap::new(),
             connect_timeout: None,
             execute_timeout: None,
             read_timeout: None,
@@ -2450,6 +2466,37 @@ mod tests {
         assert_eq!(server.command, Some("node".to_string()));
         assert_eq!(server.args, vec!["server.js"]);
         assert_eq!(server.env.get("FOO"), Some(&"bar".to_string()));
+        assert!(server.headers.is_empty());
+    }
+
+    #[test]
+    fn test_mcp_server_config_headers_parse() {
+        let json = r#"{
+            "servers": {
+                "hf": {
+                    "url": "https://huggingface.co/mcp",
+                    "headers": {
+                        "Authorization": "Bearer hf_token123",
+                        "X-Custom": "value"
+                    }
+                }
+            }
+        }"#;
+        let config: McpConfig = serde_json::from_str(json).unwrap();
+        let server = config.servers.get("hf").unwrap();
+        assert_eq!(
+            server.headers.get("Authorization"),
+            Some(&"Bearer hf_token123".to_string())
+        );
+        assert_eq!(server.headers.get("X-Custom"), Some(&"value".to_string()));
+        assert_eq!(server.headers.len(), 2);
+    }
+
+    #[test]
+    fn test_mcp_server_config_headers_default_empty() {
+        let json = r#"{"url": "https://example.com/mcp"}"#;
+        let server: McpServerConfig = serde_json::from_str(json).unwrap();
+        assert!(server.headers.is_empty());
     }
 
     #[test]
