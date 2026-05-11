@@ -325,6 +325,14 @@ impl Settings {
             self.low_motion = true;
             self.fancy_animations = false;
         }
+        // Tabby (Eugeny/tabby) sets TERM_PROGRAM=Tabby. Like VS Code, it is
+        // an Electron-based terminal whose GPU compositor cannot sustain 120
+        // FPS full-frame redraws; the resulting intermediate frames cause
+        // visible flickering on macOS (#1378). Apply the same 30 FPS cap.
+        if std::env::var("TERM_PROGRAM").as_deref() == Ok("Tabby") {
+            self.low_motion = true;
+            self.fancy_animations = false;
+        }
     }
 
     /// Save settings to disk
@@ -499,7 +507,7 @@ impl Settings {
 
     /// Get all settings as a displayable string
     pub fn display(&self, locale: crate::localization::Locale) -> String {
-        use crate::localization::{MessageId, tr};
+        use crate::localization::{tr, MessageId};
         let mut lines = Vec::new();
         lines.push(tr(locale, MessageId::SettingsTitle).to_string());
         lines.push("─────────────────────────────".to_string());
@@ -936,6 +944,34 @@ mod tests {
         assert!(
             !settings.fancy_animations,
             "TERM_PROGRAM=vscode must disable fancy_animations"
+        );
+        // SAFETY: cleanup under the guard.
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("TERM_PROGRAM", v),
+                None => std::env::remove_var("TERM_PROGRAM"),
+            }
+        }
+    }
+
+    #[test]
+    fn tabby_term_program_forces_low_motion_on() {
+        let _g = term_program_test_guard();
+        let prev = std::env::var_os("TERM_PROGRAM");
+        // SAFETY: serialised by the guard.
+        unsafe {
+            std::env::set_var("TERM_PROGRAM", "Tabby");
+        }
+        let mut settings = Settings::default();
+        assert!(!settings.low_motion, "default is animated");
+        settings.apply_env_overrides();
+        assert!(
+            settings.low_motion,
+            "TERM_PROGRAM=Tabby must enable low_motion to prevent flickering (#1378)"
+        );
+        assert!(
+            !settings.fancy_animations,
+            "TERM_PROGRAM=Tabby must disable fancy_animations"
         );
         // SAFETY: cleanup under the guard.
         unsafe {
