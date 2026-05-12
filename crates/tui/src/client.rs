@@ -840,7 +840,7 @@ pub(super) fn apply_reasoning_effort(
             ApiProvider::Openai | ApiProvider::Ollama => {}
             ApiProvider::NvidiaNim => {
                 body["chat_template_kwargs"] = json!({
-                    "thinking": false,
+                    "enable_thinking": false,
                 });
             }
         },
@@ -858,8 +858,7 @@ pub(super) fn apply_reasoning_effort(
             ApiProvider::Openai | ApiProvider::Ollama => {}
             ApiProvider::NvidiaNim => {
                 body["chat_template_kwargs"] = json!({
-                    "thinking": true,
-                    "reasoning_effort": "high",
+                    "enable_thinking": true,
                 });
             }
         },
@@ -877,8 +876,7 @@ pub(super) fn apply_reasoning_effort(
             ApiProvider::Openai | ApiProvider::Ollama => {}
             ApiProvider::NvidiaNim => {
                 body["chat_template_kwargs"] = json!({
-                    "thinking": true,
-                    "reasoning_effort": "max",
+                    "enable_thinking": true,
                 });
             }
         },
@@ -1754,14 +1752,9 @@ mod tests {
         apply_reasoning_effort(&mut body, Some("max"), ApiProvider::NvidiaNim);
 
         assert_eq!(
-            body.pointer("/chat_template_kwargs/thinking")
+            body.pointer("/chat_template_kwargs/enable_thinking")
                 .and_then(Value::as_bool),
             Some(true)
-        );
-        assert_eq!(
-            body.pointer("/chat_template_kwargs/reasoning_effort")
-                .and_then(Value::as_str),
-            Some("max")
         );
         assert!(body.get("thinking").is_none());
         assert!(body.get("reasoning_effort").is_none());
@@ -1773,7 +1766,7 @@ mod tests {
         apply_reasoning_effort(&mut body, Some("off"), ApiProvider::NvidiaNim);
 
         assert_eq!(
-            body.pointer("/chat_template_kwargs/thinking")
+            body.pointer("/chat_template_kwargs/enable_thinking")
                 .and_then(Value::as_bool),
             Some(false)
         );

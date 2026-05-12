@@ -35,7 +35,9 @@ pub struct MessageRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking: Option<serde_json::Value>,
     /// DeepSeek reasoning-effort tier: "off" | "low" | "medium" | "high" | "max".
-    /// Translated by the client into DeepSeek's `reasoning_effort` + `thinking` fields.
+    /// Translated by the client into provider-specific thinking controls
+    /// (`reasoning_effort` + `thinking` on DeepSeek; `chat_template_kwargs.enable_thinking`
+    /// on NVIDIA NIM).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
