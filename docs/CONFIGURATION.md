@@ -133,18 +133,18 @@ Save this to `~/.deepseek/config.toml`, then run `deepseek` to start the TUI.
 
 ### Common pitfalls
 
-**Why must I use `openai` and not a custom provider name?**  
+**Why must I use `openai` and not a custom provider name?**
 The config parser recognises a fixed set of names: `deepseek`, `openai`,
 `openrouter`, `nvidia-nim`, `novita`, `fireworks`, `sglang`, `vllm`, `ollama`.
 Any other value produces an `unknown variant` deserialization error. Use `openai`
 for the broadest compatibility with OpenAI-compatible gateways.
 
-**The model name has no effect — it always uses `gpt-4.1`.**  
+**The model name has no effect — it always uses `gpt-4.1`.**
 `model` must be at the top level of the file, not nested inside
 `[providers.openai]`. The top-level value is the one the engine reads for the
 default request model.
 
-**How much of the URL should I include in `base_url`?**  
+**How much of the URL should I include in `base_url`?**
 Write only up to `/v1` (e.g. `https://api.example.com/v1`). The client appends
 `/chat/completions` automatically; including the full path will produce a
 double-suffix error.
