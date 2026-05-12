@@ -135,9 +135,9 @@ Save this to `~/.deepseek/config.toml`, then run `deepseek` to start the TUI.
 
 **Why must I use `openai` and not a custom provider name?**  
 The config parser recognises a fixed set of names: `deepseek`, `openai`,
-`openrouter`, `nvidia-nim`, `fireworks`, `sglang`, `vllm`, `ollama`. Any other
-value produces an `unknown variant` deserialization error. Use `openai` for the
-broadest compatibility with OpenAI-compatible gateways.
+`openrouter`, `nvidia-nim`, `novita`, `fireworks`, `sglang`, `vllm`, `ollama`.
+Any other value produces an `unknown variant` deserialization error. Use `openai`
+for the broadest compatibility with OpenAI-compatible gateways.
 
 **The model name has no effect — it always uses `gpt-4.1`.**  
 `model` must be at the top level of the file, not nested inside
