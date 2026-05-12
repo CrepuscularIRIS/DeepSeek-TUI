@@ -136,6 +136,247 @@ pub(super) fn emit_tool_audit(event: serde_json::Value) {
     }
 }
 
+fn deferred_tool_schema_hydration(
+    tool_name: &str,
+    tool_input: &serde_json::Value,
+    schema: &serde_json::Value,
+) -> Option<ToolResult> {
+    let schema_obj = schema.as_object()?;
+    let input_obj = tool_input.as_object()?;
+    let properties = schema_obj.get("properties")?.as_object()?;
+
+    let mut expected_fields: Vec<String> = properties.keys().cloned().collect();
+    expected_fields.sort();
+
+    let required_fields: Vec<String> = schema_obj
+        .get("required")
+        .and_then(|value| value.as_array())
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(|value| value.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut received_fields: Vec<String> = input_obj.keys().cloned().collect();
+    received_fields.sort();
+
+    let expected_lookup: std::collections::BTreeSet<&str> =
+        expected_fields.iter().map(String::as_str).collect();
+    let received_lookup: std::collections::BTreeSet<&str> =
+        received_fields.iter().map(String::as_str).collect();
+
+    let missing_fields: Vec<String> = required_fields
+        .iter()
+        .filter(|field| !received_lookup.contains(field.as_str()))
+        .cloned()
+        .collect();
+
+    let unexpected_fields: Vec<String> = received_fields
+        .iter()
+        .filter(|field| !expected_lookup.contains(field.as_str()))
+        .cloned()
+        .collect();
+
+    if missing_fields.is_empty() && unexpected_fields.is_empty() {
+        return None;
+    }
+
+    let likely_corrections: Vec<serde_json::Value> = unexpected_fields
+        .iter()
+        .filter_map(|unexpected| {
+            suggest_field_correction(unexpected, properties).map(|expected| {
+                serde_json::json!({
+                    "from": unexpected,
+                    "to": expected,
+                })
+            })
+        })
+        .collect();
+
+    let mut content = format!(
+        "Tool `{tool_name}` was deferred and has now been loaded.\n\n\
+         The tool was not executed.\n\n\
+         Expected fields:\n"
+    );
+    for field in &expected_fields {
+        let required = if required_fields.iter().any(|required| required == field) {
+            "required"
+        } else {
+            "optional"
+        };
+        content.push_str(&format!("  - {field} ({required})\n"));
+    }
+    if expected_fields.is_empty() {
+        content.push_str("  - none\n");
+    }
+
+    content.push_str("\nReceived fields:\n");
+    if received_fields.is_empty() {
+        content.push_str("  - none\n");
+    } else {
+        for field in &received_fields {
+            content.push_str(&format!("  - {field}\n"));
+        }
+    }
+
+    content.push_str("\nMissing required fields:\n");
+    if missing_fields.is_empty() {
+        content.push_str("  - none\n");
+    } else {
+        for field in &missing_fields {
+            content.push_str(&format!("  - {field}\n"));
+        }
+    }
+
+    content.push_str("\nUnexpected fields:\n");
+    if unexpected_fields.is_empty() {
+        content.push_str("  - none\n");
+    } else {
+        for field in &unexpected_fields {
+            content.push_str(&format!("  - {field}\n"));
+        }
+    }
+
+    if !likely_corrections.is_empty() {
+        content.push_str("\nLikely corrections:\n");
+        for correction in &likely_corrections {
+            let from = correction
+                .get("from")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let to = correction.get("to").and_then(|v| v.as_str()).unwrap_or("");
+            content.push_str(&format!("  - {from} -> {to}\n"));
+        }
+    }
+
+    content.push_str("\nRetry with the loaded schema.");
+
+    Some(ToolResult::error(content).with_metadata(serde_json::json!({
+        "kind": "deferred_tool_schema_hydration",
+        "tool_name": tool_name,
+        "expected_fields": expected_fields,
+        "required_fields": required_fields,
+        "received_fields": received_fields,
+        "missing_fields": missing_fields,
+        "unexpected_fields": unexpected_fields,
+        "likely_corrections": likely_corrections,
+    })))
+}
+
+fn suggest_field_correction(
+    unexpected: &str,
+    properties: &serde_json::Map<String, serde_json::Value>,
+) -> Option<String> {
+    let unexpected_normalized = normalize_field_name(unexpected);
+    let unexpected_tokens = tokenise_field_name(unexpected);
+
+    let mut best: Option<(usize, String)> = None;
+    for (candidate, schema) in properties {
+        let candidate_normalized = normalize_field_name(candidate);
+        let candidate_tokens = tokenise_field_name(candidate);
+
+        let mut score = edit_distance(&unexpected_normalized, &candidate_normalized);
+
+        if candidate_normalized.contains(&unexpected_normalized)
+            || unexpected_normalized.contains(&candidate_normalized)
+        {
+            score = score.saturating_sub(2);
+        }
+
+        if obvious_alias_match(&unexpected_tokens, &candidate_tokens, schema) {
+            score = 0;
+        }
+
+        match &best {
+            Some((best_score, _)) if score >= *best_score => {}
+            _ => best = Some((score, candidate.clone())),
+        }
+    }
+
+    best.and_then(|(score, candidate)| (score <= 3).then_some(candidate))
+}
+
+fn obvious_alias_match(
+    unexpected_tokens: &[String],
+    candidate_tokens: &[String],
+    schema: &serde_json::Value,
+) -> bool {
+    let description = schema
+        .get("description")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    let unexpected_has_oldish = unexpected_tokens.iter().any(|token| {
+        matches!(
+            token.as_str(),
+            "old" | "before" | "previous" | "source" | "from"
+        )
+    });
+    let unexpected_has_newish = unexpected_tokens.iter().any(|token| {
+        matches!(
+            token.as_str(),
+            "new" | "after" | "replacement" | "target" | "to"
+        )
+    });
+
+    let candidate_is_search_like = candidate_tokens.iter().any(|token| {
+        matches!(
+            token.as_str(),
+            "search" | "find" | "match" | "pattern" | "query"
+        )
+    }) || description.contains("search")
+        || description.contains("find")
+        || description.contains("match");
+
+    let candidate_is_replace_like = candidate_tokens.iter().any(|token| {
+        matches!(
+            token.as_str(),
+            "replace" | "replacement" | "substitute" | "write" | "content"
+        )
+    }) || description.contains("replace")
+        || description.contains("substitute");
+
+    (unexpected_has_oldish && candidate_is_search_like)
+        || (unexpected_has_newish && candidate_is_replace_like)
+}
+
+fn normalize_field_name(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn tokenise_field_name(value: &str) -> Vec<String> {
+    value
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| segment.to_ascii_lowercase())
+        .collect()
+}
+
+fn edit_distance(a: &str, b: &str) -> usize {
+    let mut prev: Vec<usize> = (0..=b.chars().count()).collect();
+    let mut curr = vec![0; prev.len()];
+
+    for (i, a_ch) in a.chars().enumerate() {
+        curr[0] = i + 1;
+        for (j, b_ch) in b.chars().enumerate() {
+            let substitution = prev[j] + usize::from(a_ch != b_ch);
+            let insertion = curr[j] + 1;
+            let deletion = prev[j + 1] + 1;
+            curr[j + 1] = substitution.min(insertion).min(deletion);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+
+    prev[b.chars().count()]
+}
+
 impl Engine {
     pub(super) async fn execute_mcp_tool_with_pool(
         pool: Arc<AsyncMutex<McpPool>>,
@@ -271,6 +512,15 @@ impl Engine {
         mcp_pool: Option<Arc<AsyncMutex<McpPool>>>,
         context_override: Option<crate::tools::ToolContext>,
     ) -> Result<ToolResult, ToolError> {
+        if let Some(registry) = registry
+            && let Some(tool) = registry.get(&tool_name)
+            && tool.defer_loading()
+            && let Some(result) =
+                deferred_tool_schema_hydration(&tool_name, &tool_input, &tool.input_schema())
+        {
+            return Ok(result);
+        }
+
         let _guard = if supports_parallel {
             ToolExecGuard::Read(lock.read().await)
         } else {
@@ -308,7 +558,13 @@ impl Engine {
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::{sync::Mutex, time::Duration};
+    use std::{
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicUsize, Ordering},
+        },
+        time::Duration,
+    };
 
     /// Tests in this module mutate `DEEPSEEK_TOOL_AUDIT_LOG` which is
     /// process-global; serialise through this guard so the parallel
@@ -317,6 +573,53 @@ mod tests {
 
     fn audit_test_guard() -> std::sync::MutexGuard<'static, ()> {
         AUDIT_TEST_GUARD.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    struct DeferredToolProbe {
+        calls: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl crate::tools::spec::ToolSpec for DeferredToolProbe {
+        fn name(&self) -> &'static str {
+            "edit_file"
+        }
+
+        fn description(&self) -> &'static str {
+            "Probe tool for deferred-tool schema hydration tests."
+        }
+
+        fn input_schema(&self) -> serde_json::Value {
+            json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" },
+                    "search": { "type": "string" },
+                    "replace": { "type": "string" }
+                },
+                "required": ["path", "search", "replace"]
+            })
+        }
+
+        fn capabilities(&self) -> Vec<crate::tools::spec::ToolCapability> {
+            vec![
+                crate::tools::spec::ToolCapability::WritesFiles,
+                crate::tools::spec::ToolCapability::Sandboxable,
+            ]
+        }
+
+        fn defer_loading(&self) -> bool {
+            true
+        }
+
+        async fn execute(
+            &self,
+            _input: serde_json::Value,
+            _context: &crate::tools::spec::ToolContext,
+        ) -> Result<crate::tools::spec::ToolResult, crate::tools::spec::ToolError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(crate::tools::spec::ToolResult::success("executed"))
+        }
     }
 
     #[tokio::test]
@@ -363,6 +666,45 @@ mod tests {
             .expect("resume event")
             .expect("event channel still open");
         assert!(matches!(resumed, Event::ResumeEvents));
+    }
+
+    #[tokio::test]
+    async fn deferred_tool_with_guessed_args_returns_schema_hydration_hint() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let tool = Arc::new(DeferredToolProbe {
+            calls: calls.clone(),
+        });
+        let workspace = tempfile::tempdir().expect("tempdir");
+        let context = crate::tools::spec::ToolContext::new(workspace.path().to_path_buf());
+        let mut registry = crate::tools::ToolRegistry::new(context);
+        registry.register(tool);
+
+        let lock = Arc::new(tokio::sync::RwLock::new(()));
+        let (tx, _rx) = mpsc::channel(1);
+        let result = Engine::execute_tool_with_lock(
+            lock,
+            false,
+            false,
+            tx,
+            "edit_file".to_string(),
+            json!({
+                "path": "src/foo.rs",
+                "old_string": "...",
+                "new_string": "..."
+            }),
+            Some(&registry),
+            None,
+            None,
+        )
+        .await
+        .expect("deferred tool should return a synthetic result");
+
+        assert!(!result.success);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(result.content.contains("The tool was not executed"));
+        assert!(result.content.contains("Expected fields"));
+        assert!(result.content.contains("old_string -> search"));
+        assert!(result.content.contains("new_string -> replace"));
     }
 
     #[test]
