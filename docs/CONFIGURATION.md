@@ -97,13 +97,13 @@ distinct set of commands (`auth`, `config`, `model`, `thread`, `sandbox`,
 
 ## Custom / Third-Party API (Quick Start)
 
-DeepSeek TUI can connect to any OpenAI-compatible endpoint — third-party gateways,
-cloud providers, or private proxies — using the `openai` provider. The minimal
-working config is five lines:
+DeepSeek TUI can connect to OpenAI-compatible endpoints over HTTPS, or to local
+HTTP endpoints when `DEEPSEEK_ALLOW_INSECURE_HTTP=1` is set, using the `openai`
+provider. The minimal working config is five lines:
 
 ```toml
 provider = "openai"
-model = "your-model-name"
+default_text_model = "your-model-name"
 
 [providers.openai]
 api_key = "your-api-key"
@@ -121,7 +121,7 @@ Save this to `~/.deepseek/config.toml`, then run `deepseek` to start the TUI.
    ```
 
 2. Paste the minimal config above and replace `your-model-name`, `your-api-key`,
-   and `https://your-api-url/v1` with the values from your provider.
+   and the API prefix from your provider.
 
 3. Save, then launch:
 
@@ -134,20 +134,18 @@ Save this to `~/.deepseek/config.toml`, then run `deepseek` to start the TUI.
 ### Common pitfalls
 
 **Why must I use `openai` and not a custom provider name?**
-The config parser recognises a fixed set of names: `deepseek`, `openai`,
-`openrouter`, `nvidia-nim`, `novita`, `fireworks`, `sglang`, `vllm`, `ollama`.
-Any other value produces an `unknown variant` deserialization error. Use `openai`
-for the broadest compatibility with OpenAI-compatible gateways.
+Provider names are validated against a fixed set after alias normalization.
+Use `openai` for the broadest compatibility with OpenAI-compatible gateways.
 
-**The model name has no effect — it always uses `gpt-4.1`.**
-`model` must be at the top level of the file, not nested inside
-`[providers.openai]`. The top-level value is the one the engine reads for the
-default request model.
+**Which model should I set?**
+Use `default_text_model` for the shared default. If you set
+`[providers.openai].model`, that provider-specific value wins for the `openai`
+provider.
 
 **How much of the URL should I include in `base_url`?**
-Write only up to `/v1` (e.g. `https://api.example.com/v1`). The client appends
-`/chat/completions` automatically; including the full path will produce a
-double-suffix error.
+Give the API prefix your provider expects. The client appends
+`/chat/completions` automatically, so most gateways use a prefix like
+`https://api.example.com/v1`, but deeper paths are also accepted.
 
 ### Setting credentials without editing the file
 
@@ -158,8 +156,9 @@ export OPENAI_MODEL="your-model-name"
 ```
 
 `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` override the config file
-for the `openai` provider. See [Environment Variables](#environment-variables) for
-the full list.
+for the `openai` provider, but `OPENAI_API_KEY` is still a fallback behind the
+saved config and keyring. See [Environment Variables](#environment-variables)
+for the full list.
 
 ## Profiles
 
