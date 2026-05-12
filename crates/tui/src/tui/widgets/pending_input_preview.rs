@@ -270,6 +270,19 @@ fn wrap_to_width(text: &str, width: usize) -> Vec<String> {
 
     for word in text.split_inclusive(' ') {
         let word_width = display_width(word);
+        let has_wide_char = word
+            .chars()
+            .any(|ch| UnicodeWidthChar::width(ch).unwrap_or(1) > 1);
+
+        if word_width > width && has_wide_char {
+            if !current.is_empty() {
+                out.push(std::mem::take(&mut current));
+                current_width = 0;
+            }
+            push_word_breaking_chars(word, width, &mut current, &mut current_width, &mut out);
+            continue;
+        }
+
         if current_width + word_width > width && !current.is_empty() {
             out.push(std::mem::take(&mut current));
             current_width = 0;
@@ -298,6 +311,25 @@ fn display_width(s: &str) -> usize {
     s.chars()
         .map(|c| UnicodeWidthChar::width(c).unwrap_or(0))
         .sum()
+}
+
+/// Hard-break a wide-character token at display-width boundaries.
+fn push_word_breaking_chars(
+    word: &str,
+    width: usize,
+    current: &mut String,
+    current_width: &mut usize,
+    out: &mut Vec<String>,
+) {
+    for ch in word.chars() {
+        let cw = UnicodeWidthChar::width(ch).unwrap_or(1);
+        if *current_width + cw > width && *current_width > 0 {
+            out.push(std::mem::take(current));
+            *current_width = 0;
+        }
+        current.push(ch);
+        *current_width += cw;
+    }
 }
 
 #[cfg(test)]
@@ -452,6 +484,26 @@ mod tests {
         // wrapped-ellipsis rows.
         assert_eq!(rows.len(), 3, "got rows: {rows:?}");
         assert!(!rows.iter().any(|r| r.contains("…")));
+    }
+
+    #[test]
+    fn long_cjk_message_wraps_across_multiple_rows() {
+        let mut preview = PendingInputPreview::new();
+        preview.queued_messages.push("中文".repeat(5));
+
+        let rows = render_to_string(&preview, 20);
+
+        // Header + 2 wrapped body rows + hint.
+        assert_eq!(rows.len(), 4, "got rows: {rows:?}");
+        assert!(
+            rows[1].contains("中文"),
+            "first body row missing content: {rows:?}"
+        );
+        assert!(
+            rows[2].contains("中文"),
+            "second body row missing content: {rows:?}"
+        );
+        assert!(rows[3].contains("edit last queued message"));
     }
 
     #[test]
