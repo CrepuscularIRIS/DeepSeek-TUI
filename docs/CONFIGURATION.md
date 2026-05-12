@@ -97,17 +97,18 @@ distinct set of commands (`auth`, `config`, `model`, `thread`, `sandbox`,
 
 ## Custom / Third-Party API (Quick Start)
 
-DeepSeek TUI can connect to OpenAI-compatible endpoints over HTTPS, or to local
-HTTP endpoints when `DEEPSEEK_ALLOW_INSECURE_HTTP=1` is set, using the `openai`
-provider. The minimal working config is five lines:
+DeepSeek TUI can connect to OpenAI-compatible endpoints over HTTPS, and to
+loopback HTTP endpoints without extra flags. For other trusted HTTP hosts, set
+`DEEPSEEK_ALLOW_INSECURE_HTTP=1`. Use the `openai` provider. The minimal
+working config is five lines:
 
 ```toml
 provider = "openai"
-default_text_model = "your-model-name"
 
 [providers.openai]
 api_key = "your-api-key"
 base_url = "https://your-api-url/v1"
+model = "your-model-name"
 ```
 
 Save this to `~/.deepseek/config.toml`, then run `deepseek` to start the TUI.
@@ -138,9 +139,9 @@ Provider names are validated against a fixed set after alias normalization.
 Use `openai` for the broadest compatibility with OpenAI-compatible gateways.
 
 **Which model should I set?**
-Use `default_text_model` for the shared default. If you set
-`[providers.openai].model`, that provider-specific value wins for the `openai`
-provider.
+Set `[providers.openai].model` for the OpenAI-compatible gateway. If you also
+set a shared `default_text_model`, the provider-specific value wins for
+`openai`.
 
 **How much of the URL should I include in `base_url`?**
 Give the API prefix your provider expects. The client appends
@@ -155,10 +156,9 @@ export OPENAI_BASE_URL="https://your-api-url/v1"
 export OPENAI_MODEL="your-model-name"
 ```
 
-`OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` override the config file
-for the `openai` provider, but `OPENAI_API_KEY` is still a fallback behind the
-saved config and keyring. See [Environment Variables](#environment-variables)
-for the full list.
+`OPENAI_BASE_URL` and `OPENAI_MODEL` override the `openai` provider config.
+`OPENAI_API_KEY` is a fallback behind the saved config and keyring. See
+[Environment Variables](#environment-variables) for the full list.
 
 ## Profiles
 
