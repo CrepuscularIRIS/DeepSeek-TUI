@@ -95,6 +95,72 @@ distinct set of commands (`auth`, `config`, `model`, `thread`, `sandbox`,
 `app-server`, `mcp-server`, `completion`) and forwards plain prompts to
 `deepseek-tui`.
 
+## Custom / Third-Party API (Quick Start)
+
+DeepSeek TUI can connect to any OpenAI-compatible endpoint — third-party gateways,
+cloud providers, or private proxies — using the `openai` provider. The minimal
+working config is five lines:
+
+```toml
+provider = "openai"
+model = "your-model-name"
+
+[providers.openai]
+api_key = "your-api-key"
+base_url = "https://your-api-url/v1"
+```
+
+Save this to `~/.deepseek/config.toml`, then run `deepseek` to start the TUI.
+
+### Step-by-step
+
+1. Open the config file:
+
+   ```bash
+   nano ~/.deepseek/config.toml
+   ```
+
+2. Paste the minimal config above and replace `your-model-name`, `your-api-key`,
+   and `https://your-api-url/v1` with the values from your provider.
+
+3. Save, then launch:
+
+   ```bash
+   deepseek
+   ```
+
+4. Run `deepseek auth status` to confirm the active provider and key source.
+
+### Common pitfalls
+
+**Why must I use `openai` and not a custom provider name?**  
+The config parser recognises a fixed set of names: `deepseek`, `openai`,
+`openrouter`, `nvidia-nim`, `fireworks`, `sglang`, `vllm`, `ollama`. Any other
+value produces an `unknown variant` deserialization error. Use `openai` for the
+broadest compatibility with OpenAI-compatible gateways.
+
+**The model name has no effect — it always uses `gpt-4.1`.**  
+`model` must be at the top level of the file, not nested inside
+`[providers.openai]`. The top-level value is the one the engine reads for the
+default request model.
+
+**How much of the URL should I include in `base_url`?**  
+Write only up to `/v1` (e.g. `https://api.example.com/v1`). The client appends
+`/chat/completions` automatically; including the full path will produce a
+double-suffix error.
+
+### Setting credentials without editing the file
+
+```bash
+deepseek auth set --provider openai --api-key "YOUR_KEY"
+export OPENAI_BASE_URL="https://your-api-url/v1"
+export OPENAI_MODEL="your-model-name"
+```
+
+`OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` override the config file
+for the `openai` provider. See [Environment Variables](#environment-variables) for
+the full list.
+
 ## Profiles
 
 You can define multiple profiles in the same file:
