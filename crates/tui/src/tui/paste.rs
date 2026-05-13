@@ -122,7 +122,7 @@ fn apply_paste_burst_retro_capture(
 }
 
 fn in_command_context(app: &App) -> bool {
-    app.input.starts_with('/')
+    crate::commands::is_slash_command(&app.input)
 }
 
 #[cfg(test)]

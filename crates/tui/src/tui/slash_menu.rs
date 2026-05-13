@@ -65,7 +65,7 @@ pub fn apply_slash_menu_selection(
 /// fully (with trailing space). On ambiguity, posts a status hint listing
 /// up to five candidates. Also considers skill names as completion candidates.
 pub fn try_autocomplete_slash_command(app: &mut App) -> bool {
-    if !app.input.starts_with('/') {
+    if !crate::commands::is_slash_command(&app.input) {
         return false;
     }
 

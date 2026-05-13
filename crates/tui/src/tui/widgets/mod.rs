@@ -2005,7 +2005,7 @@ pub(crate) fn slash_completion_hints(
     locale: crate::localization::Locale,
     workspace: Option<&std::path::Path>,
 ) -> Vec<SlashMenuEntry> {
-    if !input.starts_with('/') {
+    if !crate::commands::is_slash_command(input) {
         return Vec::new();
     }
 
@@ -2401,6 +2401,20 @@ mod tests {
                 cursor_row <= lines.len(),
                 "cursor_row={cursor_row} should be <= lines.len()={} for input={input:?}",
                 lines.len()
+            );
+        }
+    }
+
+    #[test]
+    fn slash_completion_hints_rejects_filesystem_paths() {
+        // /usr/xxx and similar absolute paths must not trigger the command popup
+        // (issue #1568 — path mistaken for a dsTUI slash-command).
+        for path in ["/usr/local/bin", "/usr/xxx", "/etc/hosts", "/home/user/.config"] {
+            let hints = slash_completion_hints(path, 128, &[], Locale::En, None);
+            assert!(
+                hints.is_empty(),
+                "expected no hints for filesystem path {path:?}, got {n}",
+                n = hints.len()
             );
         }
     }

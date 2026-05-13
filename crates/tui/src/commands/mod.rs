@@ -522,6 +522,19 @@ pub const COMMANDS: &[CommandInfo] = &[
     },
 ];
 
+/// Returns `true` when `input` looks like a dsTUI slash command rather than a
+/// filesystem path.  A command starts with `/` and the token between the
+/// leading `/` and the first whitespace must not contain a second `/`
+/// (e.g. `/usr/local/bin` is a path, `/help` is a command).
+pub fn is_slash_command(input: &str) -> bool {
+    let Some(rest) = input.strip_prefix('/') else {
+        return false;
+    };
+    // An empty token ("/" alone) is accepted as a command prefix for autocomplete.
+    let token = rest.split_ascii_whitespace().next().unwrap_or(rest);
+    !token.contains('/')
+}
+
 /// Execute a slash command
 pub fn execute(cmd: &str, app: &mut App) -> CommandResult {
     let parts: Vec<&str> = cmd.trim().splitn(2, ' ').collect();
@@ -1055,6 +1068,31 @@ mod tests {
     use std::ffi::OsString;
     use std::path::{Path, PathBuf};
     use std::sync::MutexGuard;
+
+    #[test]
+    fn is_slash_command_accepts_simple_commands() {
+        assert!(is_slash_command("/help"));
+        assert!(is_slash_command("/clear"));
+        assert!(is_slash_command("/model deepseek-v3"));
+        assert!(is_slash_command("/skill my-skill"));
+        assert!(is_slash_command("/"));
+    }
+
+    #[test]
+    fn is_slash_command_rejects_filesystem_paths() {
+        assert!(!is_slash_command("/usr/local/bin"));
+        assert!(!is_slash_command("/usr/xxx"));
+        assert!(!is_slash_command("/home/user/.config"));
+        assert!(!is_slash_command("/etc/hosts"));
+        assert!(!is_slash_command("/var/log/syslog"));
+    }
+
+    #[test]
+    fn is_slash_command_rejects_non_slash_prefixes() {
+        assert!(!is_slash_command("help"));
+        assert!(!is_slash_command("usr/local"));
+        assert!(!is_slash_command(""));
+    }
 
     fn create_test_app() -> App {
         let options = TuiOptions {

@@ -2877,7 +2877,7 @@ async fn run_event_loop(
                         && !key.modifiers.contains(KeyModifiers::ALT) =>
                 {
                     if let Some(input) = app.submit_input() {
-                        if input.starts_with('/') {
+                        if commands::is_slash_command(&input) {
                             if execute_command_input(
                                 terminal,
                                 app,
@@ -2926,7 +2926,7 @@ async fn run_event_loop(
                 // #382: Ctrl+Enter forces a steer into the current turn.
                 KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     if let Some(input) = app.submit_input() {
-                        if input.starts_with('/') {
+                        if commands::is_slash_command(&input) {
                             if execute_command_input(
                                 terminal,
                                 app,
@@ -2997,7 +2997,7 @@ async fn run_event_loop(
                             handle_memory_quick_add(app, &input, config);
                             continue;
                         }
-                        if input.starts_with('/') {
+                        if commands::is_slash_command(&input) {
                             if execute_command_input(
                                 terminal,
                                 app,

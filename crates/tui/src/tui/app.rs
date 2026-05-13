@@ -3579,7 +3579,7 @@ impl App {
         // sees the @mention in the composer before submission.
         self.consolidate_large_input_if_oversized();
         let input = self.input.clone();
-        if !input.starts_with('/') {
+        if !crate::commands::is_slash_command(&input) {
             self.input_history.push(input.clone());
             if self.max_input_history == 0 {
                 self.input_history.clear();
