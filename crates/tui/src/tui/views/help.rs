@@ -9,8 +9,9 @@
 //! Keys: any printable character extends the filter, `Backspace` (or `Ctrl+H`)
 //! shrinks it,
 //! `↑`/`↓` (or `Ctrl+P`/`Ctrl+N`) move the selection, `PgUp`/`PgDn` jump by
-//! ten rows, `Home`/`End` jump to ends, and `Esc` closes. Pressing `?` again
-//! at the call-site (`tui::ui`) also toggles the overlay closed.
+//! ten rows, `Home`/`End` jump to ends, and `Esc` (or `Ctrl+C`) closes.
+//! Pressing `?` again at the call-site (`tui::ui`) also toggles the overlay
+//! closed.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -246,6 +247,18 @@ impl ModalView for HelpView {
     fn handle_key(&mut self, key: KeyEvent) -> ViewAction {
         match key.code {
             KeyCode::Esc => ViewAction::Close,
+            // Some Windows terminal stacks (conhost / Node.js pty wrappers used
+            // by the npm install) emit the Escape key as the raw ESC character
+            // (0x1B) rather than as KeyCode::Esc after the Kitty keyboard-
+            // protocol push was enabled on Windows in v0.8.32.  Guard with
+            // modifiers.is_empty() so Alt+key sequences (which also start with
+            // 0x1B) are not swallowed (#1559).
+            KeyCode::Char('\x1b') if key.modifiers.is_empty() => ViewAction::Close,
+            // Ctrl+C is the conventional "abort" binding; many users expect it
+            // to dismiss overlays even when a turn is not in progress (#1559).
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                ViewAction::Close
+            }
             KeyCode::Up => {
                 self.move_selection(-1);
                 ViewAction::None
@@ -574,6 +587,31 @@ mod tests {
         let mut view = HelpView::new();
         let action = view.handle_key(key(KeyCode::Esc));
         assert!(matches!(action, ViewAction::Close));
+    }
+
+    // On some Windows terminal stacks the Escape key arrives as the raw ESC
+    // character (KeyCode::Char('\x1b')) rather than KeyCode::Esc (#1559).
+    #[test]
+    fn esc_char_closes_overlay() {
+        let mut view = HelpView::new();
+        let action =
+            view.handle_key(KeyEvent::new(KeyCode::Char('\x1b'), KeyModifiers::NONE));
+        assert!(
+            matches!(action, ViewAction::Close),
+            "KeyCode::Char('\\x1b') with no modifiers must close the overlay"
+        );
+    }
+
+    // Ctrl+C is a conventional dismiss binding that users expect (#1559).
+    #[test]
+    fn ctrl_c_closes_overlay() {
+        let mut view = HelpView::new();
+        let action =
+            view.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert!(
+            matches!(action, ViewAction::Close),
+            "Ctrl+C must close the help overlay"
+        );
     }
 
     #[test]
