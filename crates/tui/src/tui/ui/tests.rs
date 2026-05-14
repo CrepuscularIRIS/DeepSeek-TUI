@@ -5605,3 +5605,33 @@ fn toast_stack_overlay_respects_composer_boundary() {
         "max_above ({max_above}) must never exceed the composer→footer gap ({gap})"
     );
 }
+
+// TerminalRestoreGuard unit tests — verify the arm/disarm state machine
+// without exercising actual terminal I/O (which requires a real tty).
+
+#[test]
+fn terminal_restore_guard_starts_armed() {
+    let guard = TerminalRestoreGuard::new(true, true, true);
+    assert!(
+        guard.active.get(),
+        "a freshly created guard must be in the armed state"
+    );
+}
+
+#[test]
+fn terminal_restore_guard_disarm_clears_active_flag() {
+    let guard = TerminalRestoreGuard::new(true, true, true);
+    guard.disarm();
+    assert!(
+        !guard.active.get(),
+        "disarm() must set active to false so Drop skips terminal I/O"
+    );
+}
+
+#[test]
+fn terminal_restore_guard_disarm_is_idempotent() {
+    let guard = TerminalRestoreGuard::new(false, false, false);
+    guard.disarm();
+    guard.disarm();
+    assert!(!guard.active.get(), "repeated disarm() calls must be safe");
+}

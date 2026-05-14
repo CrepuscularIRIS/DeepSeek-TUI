@@ -308,6 +308,14 @@ pub async fn run_tui(config: &Config, options: TuiOptions) -> Result<()> {
     // sequence is received. Terminals that do not understand it silently
     // ignore it.
     recover_terminal_modes(&mut stdout, use_mouse_capture, use_bracketed_paste);
+    // RAII guard: if any `?`-propagating call between here and the
+    // explicit cleanup block below exits early, the guard's Drop ensures
+    // the terminal is restored (raw mode off, alt-screen left, mouse
+    // capture disabled). Without this, Ubuntu users installing for the
+    // first time see "crazy errors" — the shell inherits alt-screen +
+    // mouse-tracking mode and prints escape sequences on every cursor move.
+    let restore_guard =
+        TerminalRestoreGuard::new(use_alt_screen, use_mouse_capture, use_bracketed_paste);
     let color_depth = palette::ColorDepth::detect();
     let palette_mode = palette::PaletteMode::detect();
     tracing::debug!(
@@ -508,6 +516,9 @@ pub async fn run_tui(config: &Config, options: TuiOptions) -> Result<()> {
     persistence_actor::persist(PersistRequest::ClearCheckpoint);
     persistence_actor::persist(PersistRequest::Shutdown);
 
+    // Disarm before running the structured cleanup so the guard's Drop
+    // does not duplicate the sequence on normal exit.
+    restore_guard.disarm();
     pop_keyboard_enhancement_flags(terminal.backend_mut());
     execute!(terminal.backend_mut(), DisableFocusChange)?;
     disable_raw_mode()?;
@@ -6401,6 +6412,57 @@ fn recover_terminal_modes<W: Write>(
 
 fn terminal_event_needs_viewport_recapture(evt: &Event) -> bool {
     matches!(evt, Event::FocusGained)
+}
+
+/// RAII guard that restores terminal state if `run_tui` exits early via `?`.
+///
+/// Created immediately after `recover_terminal_modes` and disarmed just before
+/// the normal structured cleanup block. This prevents the shell from inheriting
+/// alt-screen + mouse-tracking mode when any initialisation step fails
+/// (e.g. `TaskManager::start`, `AutomationManager::default_location`, or
+/// `DeepSeekClient::new`).
+struct TerminalRestoreGuard {
+    use_alt_screen: bool,
+    use_mouse_capture: bool,
+    use_bracketed_paste: bool,
+    active: std::cell::Cell<bool>,
+}
+
+impl TerminalRestoreGuard {
+    fn new(use_alt_screen: bool, use_mouse_capture: bool, use_bracketed_paste: bool) -> Self {
+        Self {
+            use_alt_screen,
+            use_mouse_capture,
+            use_bracketed_paste,
+            active: std::cell::Cell::new(true),
+        }
+    }
+
+    fn disarm(&self) {
+        self.active.set(false);
+    }
+}
+
+impl Drop for TerminalRestoreGuard {
+    fn drop(&mut self) {
+        if !self.active.get() {
+            return;
+        }
+        let mut stdout = io::stdout();
+        pop_keyboard_enhancement_flags(&mut stdout);
+        let _ = execute!(stdout, DisableFocusChange);
+        let _ = disable_raw_mode();
+        if self.use_alt_screen {
+            let _ = execute!(stdout, LeaveAlternateScreen);
+        }
+        if self.use_mouse_capture {
+            let _ = execute!(stdout, DisableMouseCapture);
+        }
+        if self.use_bracketed_paste {
+            let _ = execute!(stdout, DisableBracketedPaste);
+        }
+        let _ = execute!(stdout, crossterm::cursor::Show);
+    }
 }
 
 pub(crate) fn status_color(level: StatusToastLevel) -> ratatui::style::Color {
